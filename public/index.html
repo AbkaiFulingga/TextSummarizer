@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Summarizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 800px;
+            padding: 40px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+        }
+        
+        .input-section {
+            margin-bottom: 30px;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            resize: vertical;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .output-section {
+            margin-top: 30px;
+        }
+        
+        .output-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .output-header h2 {
+            color: #333;
+            font-size: 1.5rem;
+        }
+        
+        #summary {
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            background-color: #f9f9f9;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        
+        .loader {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .word-count {
+            text-align: right;
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .error {
+            color: #e74c3c;
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #ffeaea;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Text Summarizer</h1>
+        
+        <div class="input-section">
+            <textarea id="inputText" placeholder="Paste your text here to get a concise summary..."></textarea>
+            <div class="word-count">Words: <span id="wordCount">0</span></div>
+        </div>
+        
+        <div class="button-container">
+            <button id="summarizeBtn">Generate Summary</button>
+        </div>
+        
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <p>Generating your summary...</p>
+        </div>
+        
+        <div class="error" id="errorMessage"></div>
+        
+        <div class="output-section">
+            <div class="output-header">
+                <h2>Summary</h2>
+            </div>
+            <div id="summary" placeholder="Your summary will appear here..."></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const inputText = document.getElementById('inputText');
+            const summarizeBtn = document.getElementById('summarizeBtn');
+            const summaryDiv = document.getElementById('summary');
+            const loader = document.getElementById('loader');
+            const errorMessage = document.getElementById('errorMessage');
+            const wordCountSpan = document.getElementById('wordCount');
+            
+            // Update word count
+            inputText.addEventListener('input', function() {
+                const text = inputText.value.trim();
+                const words = text ? text.split(/\s+/).length : 0;
+                wordCountSpan.textContent = words;
+            });
+            
+            // Summarize text
+            summarizeBtn.addEventListener('click', async function() {
+                const text = inputText.value.trim();
+                
+                if (!text) {
+                    showError('Please enter some text to summarize.');
+                    return;
+                }
+                
+                if (text.length < 50) {
+                    showError('Please enter at least 50 characters for meaningful summarization.');
+                    return;
+                }
+                
+                // Show loader, hide error, disable button
+                loader.style.display = 'block';
+                errorMessage.style.display = 'none';
+                summarizeBtn.disabled = true;
+                summaryDiv.textContent = '';
+                
+                try {
+                    const response = await fetch('/api/summarize', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ text: text })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Failed to generate summary');
+                    }
+                    
+                    summaryDiv.textContent = data.summary;
+                } catch (error) {
+                    console.error('Summarization error:', error);
+                    showError(error.message || 'An error occurred while generating the summary.');
+                } finally {
+                    loader.style.display = 'none';
+                    summarizeBtn.disabled = false;
+                }
+            });
+            
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
