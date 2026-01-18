@@ -140,7 +140,39 @@
             font-size: 14px;
             margin-top: 5px;
         }
-        
+
+        .upload-section {
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .upload-label {
+            display: block;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        #pdfUpload {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #f0f0f0;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+        }
+
+        #pdfUpload:hover {
+            border-color: #667eea;
+        }
+
+        .file-name-display {
+            margin-top: 10px;
+            color: #666;
+            font-style: italic;
+        }
+
         .error {
             color: #e74c3c;
             text-align: center;
@@ -170,7 +202,13 @@
             <textarea id="inputText" placeholder="Paste your text here to get a concise summary..."></textarea>
             <div class="word-count">Words: <span id="wordCount">0</span></div>
         </div>
-        
+
+        <div class="upload-section">
+            <label for="pdfUpload" class="upload-label">Or you can upload a PDF file!</label>
+            <input type="file" id="pdfUpload" accept=".pdf" />
+            <div id="fileName" class="file-name-display"></div>
+        </div>
+
         <div class="button-container">
             <button id="summarizeBtn">Generate Summary</button>
         </div>
@@ -193,54 +231,99 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const inputText = document.getElementById('inputText');
+            const pdfUpload = document.getElementById('pdfUpload');
+            const fileNameDisplay = document.getElementById('fileName');
             const summarizeBtn = document.getElementById('summarizeBtn');
             const summaryDiv = document.getElementById('summary');
             const loader = document.getElementById('loader');
             const errorMessage = document.getElementById('errorMessage');
             const wordCountSpan = document.getElementById('wordCount');
-            
+
+            let selectedFile = null;
+
             // Update word count
             inputText.addEventListener('input', function() {
                 const text = inputText.value.trim();
                 const words = text ? text.split(/\s+/).length : 0;
                 wordCountSpan.textContent = words;
             });
-            
-            // Summarize text
+
+            // Handle PDF file selection
+            pdfUpload.addEventListener('change', function(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    if (file.type !== 'application/pdf') {
+                        showError('Please select a PDF file.');
+                        pdfUpload.value = '';
+                        selectedFile = null;
+                        fileNameDisplay.textContent = '';
+                        return;
+                    }
+
+                    selectedFile = file;
+                    fileNameDisplay.textContent = `Selected: ${file.name}`;
+
+                    // Clear text input when PDF is selected
+                    inputText.value = '';
+                    wordCountSpan.textContent = '0';
+                } else {
+                    selectedFile = null;
+                    fileNameDisplay.textContent = '';
+                }
+            });
+
+            // Summarize text or PDF
             summarizeBtn.addEventListener('click', async function() {
-                const text = inputText.value.trim();
-                
-                if (!text) {
-                    showError('Please enter some text to summarize.');
-                    return;
-                }
-                
-                if (text.length < 50) {
-                    showError('Please enter at least 50 characters for meaningful summarization.');
-                    return;
-                }
-                
+                let text = inputText.value.trim();
+
                 // Show loader, hide error, disable button
                 loader.style.display = 'block';
                 errorMessage.style.display = 'none';
                 summarizeBtn.disabled = true;
                 summaryDiv.textContent = '';
-                
+
                 try {
-                    const response = await fetch('/api/summarize', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ text: text })
-                    });
-                    
+                    let response;
+
+                    if (selectedFile) {
+                        // Process PDF file
+                        if (!selectedFile) {
+                            throw new Error('Please select a PDF file.');
+                        }
+
+                        // Create FormData for file upload
+                        const formData = new FormData();
+                        formData.append('pdf', selectedFile);
+
+                        response = await fetch('/api/summarize', {
+                            method: 'POST',
+                            body: formData
+                        });
+                    } else {
+                        // Process text input
+                        if (!text) {
+                            throw new Error('Please enter some text or upload a PDF to summarize.');
+                        }
+
+                        if (text.length < 50) {
+                            throw new Error('Please enter at least 50 characters for meaningful summarization.');
+                        }
+
+                        response = await fetch('/api/summarize', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ text: text })
+                        });
+                    }
+
                     const data = await response.json();
-                    
+
                     if (!response.ok) {
                         throw new Error(data.error || 'Failed to generate summary');
                     }
-                    
+
                     summaryDiv.textContent = data.summary;
                 } catch (error) {
                     console.error('Summarization error:', error);
@@ -250,7 +333,7 @@
                     summarizeBtn.disabled = false;
                 }
             });
-            
+
             function showError(message) {
                 errorMessage.textContent = message;
                 errorMessage.style.display = 'block';
