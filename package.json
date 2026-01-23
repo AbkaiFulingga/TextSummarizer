@@ -21,7 +21,8 @@
     "cors": "^2.8.5",
     "node-fetch": "^2.6.7",
     "pdf-parse": "^1.1.1",
-    "busboy": "^1.6.0"
+    "busboy": "^1.6.0",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "vercel": "^32.4.1"
