@@ -4,6 +4,8 @@ const fetch = require('node-fetch');
 const pdfParse = require('pdf-parse');
 const Busboy = require('busboy');
 const path = require('path');
+const fs = require('fs');
+const mammoth = require('mammoth');
 require('dotenv').config();
 
 const app = express();
@@ -25,9 +27,9 @@ app.get('/', (req, res) => {
 // API endpoint for text summarization
 app.post('/api/summarize', async (req, res) => {
     try {
-        // Check if it's a file upload (PDF) or text submission
+        // Check if it's a file upload or text submission
         if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
-            // Handle PDF upload
+            // Handle file upload
             const busboy = Busboy({ headers: req.headers });
 
             let fileData = null;
@@ -76,37 +78,47 @@ app.post('/api/summarize', async (req, res) => {
 
             busboy.on('finish', async () => {
                 if (!fileData) {
-                    return res.status(400).json({ error: 'No PDF file uploaded' });
+                    return res.status(400).json({ error: 'No file uploaded' });
                 }
 
                 // Validate file extension
                 const fileExtension = path.extname(fileName).toLowerCase();
-                if (fileExtension !== '.pdf') {
-                    return res.status(400).json({ error: 'Only PDF files are allowed' });
-                }
 
                 try {
-                    // Parse the PDF content
-                    const pdfData = await pdfParse(fileData);
-                    const textContent = pdfData.text;
+                    let textContent = '';
+
+                    if (fileExtension === '.pdf') {
+                        // Parse .PDF content
+                        const pdfData = await pdfParse(fileData);
+                        textContent = pdfData.text;
+                    } else if (fileExtension === '.docx') {
+                        // Parse .DOCX content
+                        const result = await mammoth.extractRawText({ buffer: fileData });
+                        textContent = result.value;
+                    } else if (fileExtension === '.txt') {
+                        // Parse .TXT content
+                        textContent = fileData.toString('utf8');
+                    } else {
+                        return res.status(400).json({ error: 'Unsupported file format. Supported formats: PDF, DOCX, TXT' });
+                    }
 
                     if (!textContent || textContent.trim().length < 50) {
-                        return res.status(400).json({ error: 'PDF does not contain enough text to summarize (minimum 50 characters)' });
+                        return res.status(400).json({ error: 'File does not contain enough text to summarize (minimum 50 characters)' });
                     }
 
                     // Summarize the extracted text
                     const summary = await getSummaryFromAI(textContent);
                     res.json({ summary });
                 } catch (error) {
-                    console.error('PDF processing error:', error);
-                    res.status(500).json({ error: 'Error processing PDF file: ' + error.message });
+                    console.error('File processing error:', error);
+                    res.status(500).json({ error: 'Error processing file: ' + error.message });
                 }
             });
 
             req.pipe(busboy);
         } else {
             // Handle text submission
-            const { text } = req.body;
+            const { text, language, summaryLength } = req.body;
 
             // Validate request body
             if (!req.body || typeof req.body !== 'object') {
@@ -133,7 +145,7 @@ app.post('/api/summarize', async (req, res) => {
             }
 
             // Summarize the provided text
-            const summary = await getSummaryFromAI(sanitizedText);
+            const summary = await getSummaryFromAI(sanitizedText, language, summaryLength);
             res.json({ summary });
         }
     } catch (error) {
@@ -143,11 +155,26 @@ app.post('/api/summarize', async (req, res) => {
 });
 
 // Function to get summary from AI API
-async function getSummaryFromAI(text) {
+async function getSummaryFromAI(text, language = 'english', summaryLength = 'medium') {
     // Check if we have an API key
     if (!apiKey) {
         console.warn('No API key provided. Using mock summarization.');
-        return mockSummarization(text);
+        return mockSummarization(text, language, summaryLength);
+    }
+
+    // Determine max tokens based on summary length, more tokens for longer summaries
+    let maxTokens;
+    switch(summaryLength) {
+        case 'short':
+            maxTokens = 100;
+            break;
+        case 'long':
+            maxTokens = 400;
+            break;
+        case 'medium':
+        default:
+            maxTokens = 200;
+            break;
     }
 
     try {
@@ -162,9 +189,9 @@ async function getSummaryFromAI(text) {
                 model: "openai/gpt-5.2",
                 messages: [{
                     role: "user",
-                    content: `Please summarize the following text in a concise manner:\n\n${text}`
+                    content: `Please summarize the following text in ${language}. Make the summary ${summaryLength} length:\n\n${text}`
                 }],
-                max_tokens: 200, // Limit the response length
+                max_tokens: maxTokens, // Limit the response length based on user preference
                 temperature: 0.5 // Control randomness
             })
         });
@@ -194,34 +221,82 @@ async function getSummaryFromAI(text) {
         }
 
         // Fallback to mock summarization if API fails
-        return mockSummarization(text);
+        return mockSummarization(text, language, summaryLength);
     }
 }
 
 // Mock summarization function for demonstration purposes
-function mockSummarization(text) {
+function mockSummarization(text, language = 'english', summaryLength = 'medium') {
     // This is a very basic mock summarization
     // In reality, this would be replaced with actual AI processing
     const sentences = text.match(/[^\.!?]+[\.!?]+/g) || [text];
-    
+
     if (sentences.length <= 3) {
-        return text.substring(0, 200) + (text.length > 200 ? '...' : '');
+        let lengthLimit;
+        switch(summaryLength) {
+            case 'short':
+                lengthLimit = 100;
+                break;
+            case 'long':
+                lengthLimit = 400;
+                break;
+            case 'medium':
+            default:
+                lengthLimit = 200;
+                break;
+        }
+        return text.substring(0, lengthLimit) + (text.length > lengthLimit ? '...' : '');
     }
-    
-    // Take the first, middle, and last sentences as a simple summary
-    const first = sentences[0] ? sentences[0].trim() : '';
-    const middle = sentences[Math.floor(sentences.length / 2)] ? sentences[Math.floor(sentences.length / 2)].trim() : '';
-    const last = sentences[sentences.length - 1] ? sentences[sentences.length - 1].trim() : '';
-    
-    let summary = [first, middle, last]
-        .filter(s => s.length > 0)
-        .join(' ');
-    
+
+    let summary;
+
+    // Adjust summary length based on user preference, medium by default
+    switch(summaryLength) {
+        case 'short':
+            // Take only the first sentence
+            summary = sentences[0] ? sentences[0].trim() : '';
+            break;
+        case 'long':
+            // Take first, middle, last, and a few more sentences
+            const indices = [0, Math.floor(sentences.length / 4), Math.floor(sentences.length / 2),
+                             Math.floor(3 * sentences.length / 4), sentences.length - 1];
+            summary = [...new Set(indices)]
+                .map(i => sentences[i] ? sentences[i].trim() : '')
+                .filter(s => s.length > 0)
+                .join(' ');
+            break;
+        case 'medium':
+        default:
+            // Take the first, middle, and last sentences as a simple summary
+            const first = sentences[0] ? sentences[0].trim() : '';
+            const middle = sentences[Math.floor(sentences.length / 2)] ? sentences[Math.floor(sentences.length / 2)].trim() : '';
+            const last = sentences[sentences.length - 1] ? sentences[sentences.length - 1].trim() : '';
+
+            summary = [first, middle, last]
+                .filter(s => s.length > 0)
+                .join(' ');
+            break;
+    }
+
     // Limit length to prevent extremely long summaries
-    if (summary.length > 300) {
-        summary = summary.substring(0, 300) + '...';
+    let maxLength;
+    switch(summaryLength) {
+        case 'short':
+            maxLength = 150;
+            break;
+        case 'long':
+            maxLength = 500;
+            break;
+        case 'medium':
+        default:
+            maxLength = 300;
+            break;
     }
-    
+
+    if (summary.length > maxLength) {
+        summary = summary.substring(0, maxLength) + '...';
+    }
+
     return summary || 'Summary could not be generated from the provided text.';
 }
 
