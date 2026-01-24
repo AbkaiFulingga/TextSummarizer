@@ -113,6 +113,12 @@
             font-size: 16px;
             line-height: 1.6;
         }
+
+        .highlight {
+            background-color: #ffff99; /* Light yellow highlight added here for ease of visibility */
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
         
         .loader {
             display: none;
@@ -187,10 +193,92 @@
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
+                margin: 10px;
             }
-            
+
             h1 {
-                font-size: 2rem;
+                font-size: 1.8rem;
+                margin-bottom: 20px;
+            }
+
+            .input-section {
+                margin-bottom: 20px;
+            }
+
+            textarea {
+                height: 150px;
+                font-size: 14px;
+            }
+
+            .options-section {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .language-selector, .length-selector {
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .button-container {
+                margin: 15px 0;
+            }
+
+            button {
+                padding: 12px 30px;
+                font-size: 16px;
+            }
+
+            .output-header h2 {
+                font-size: 1.3rem;
+            }
+
+            #summary {
+                min-height: 120px;
+                font-size: 14px;
+            }
+
+            .upload-section {
+                margin: 15px 0;
+            }
+
+            .upload-label {
+                font-size: 14px;
+            }
+
+            #fileUpload {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 15px;
+                margin: 5px;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            textarea {
+                height: 120px;
+                padding: 10px;
+            }
+
+            button {
+                padding: 10px 20px;
+                font-size: 15px;
+            }
+
+            #summary {
+                padding: 10px;
+                font-size: 13px;
+            }
+
+            .output-header h2 {
+                font-size: 1.2rem;
             }
         }
     </style>
@@ -205,9 +293,40 @@
         </div>
 
         <div class="upload-section">
-            <label for="pdfUpload" class="upload-label">Or you can upload a PDF file!</label>
-            <input type="file" id="pdfUpload" accept=".pdf" />
+            <label for="fileUpload" class="upload-label">Or you can upload a file! (PDF, DOCX, TXT)</label>
+            <input type="file" id="fileUpload" accept=".pdf,.docx,.txt" />
             <div id="fileName" class="file-name-display"></div>
+            <div id="fileLoader" class="file-loader" style="display: none; margin-top: 10px;">
+                <div class="spinner"></div>
+                <p>Processing your file...</p>
+            </div>
+        </div>
+
+        <div class="options-section" style="margin: 20px 0; display: flex; gap: 20px; flex-wrap: wrap;">
+            <div class="language-selector">
+                <label for="languageSelect">Language:</label>
+                <select id="languageSelect">
+                    <option value="english">English</option>
+                    <option value="spanish">Spanish</option>
+                    <option value="french">French</option>
+                    <option value="german">German</option>
+                    <option value="chinese">Chinese</option>
+                    <option value="japanese">Japanese</option>
+                    <option value="korean">Korean</option>
+                    <option value="arabic">Arabic</option>
+                    <option value="portuguese">Portuguese</option>
+                    <option value="russian">Russian</option>
+                </select>
+            </div>
+
+            <div class="length-selector">
+                <label for="lengthSelect">Summary Length:</label>
+                <select id="lengthSelect">
+                    <option value="short">Short</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="long">Long</option>
+                </select>
+            </div>
         </div>
 
         <div class="button-container">
@@ -227,18 +346,29 @@
             </div>
             <div id="summary" placeholder="Your summary will appear here..."></div>
         </div>
+
+        <!-- History Panel -->
+        <div class="history-section" style="margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+            <div class="history-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2>History</h2>
+                <button id="clearHistoryBtn" style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px;">Clear History</button>
+            </div>
+            <div id="historyList" style="max-height: 200px; overflow-y: auto;"></div>
+        </div>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const inputText = document.getElementById('inputText');
-            const pdfUpload = document.getElementById('pdfUpload');
+            const fileUpload = document.getElementById('fileUpload');
             const fileNameDisplay = document.getElementById('fileName');
             const summarizeBtn = document.getElementById('summarizeBtn');
             const summaryDiv = document.getElementById('summary');
             const loader = document.getElementById('loader');
             const errorMessage = document.getElementById('errorMessage');
             const wordCountSpan = document.getElementById('wordCount');
+            const languageSelect = document.getElementById('languageSelect');
+            const lengthSelect = document.getElementById('lengthSelect');
 
             let selectedFile = null;
 
@@ -249,13 +379,16 @@
                 wordCountSpan.textContent = words;
             });
 
-            // Handle PDF file selection
-            pdfUpload.addEventListener('change', function(event) {
+            // Handle file selection (PDF, DOCX, TXT)
+            fileUpload.addEventListener('change', function(event) {
                 const file = event.target.files[0];
                 if (file) {
-                    if (file.type !== 'application/pdf') {
-                        showError('Please select a PDF file.');
-                        pdfUpload.value = '';
+                    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+                    const fileExtension = file.name.toLowerCase().split('.').pop();
+
+                    if (!validTypes.includes(file.type) && !['pdf', 'docx', 'txt'].includes(fileExtension)) {
+                        showError('Please select a PDF, DOCX, or TXT file.');
+                        fileUpload.value = '';
                         selectedFile = null;
                         fileNameDisplay.textContent = '';
                         return;
@@ -264,7 +397,7 @@
                     selectedFile = file;
                     fileNameDisplay.textContent = `Selected: ${file.name}`;
 
-                    // Clear text input when PDF is selected
+                    // Clear text input when file is selected
                     inputText.value = '';
                     wordCountSpan.textContent = '0';
                 } else {
@@ -273,12 +406,19 @@
                 }
             });
 
-            // Summarize text or PDF
+            // Summarize text or file
             summarizeBtn.addEventListener('click', async function() {
                 let text = inputText.value.trim();
 
                 // Show loader, hide error, disable button
-                loader.style.display = 'block';
+                if (selectedFile) {
+                    // Show file loader when processing a file
+                    document.getElementById('fileLoader').style.display = 'block';
+                } else {
+                    // Show general loader when processing text
+                    loader.style.display = 'block';
+                }
+
                 errorMessage.style.display = 'none';
                 summarizeBtn.disabled = true;
                 summaryDiv.textContent = '';
@@ -287,14 +427,14 @@
                     let response;
 
                     if (selectedFile) {
-                        // Process PDF file
+                        // Process file upload
                         if (!selectedFile) {
-                            throw new Error('Please select a PDF file.');
+                            throw new Error('Please select a file.');
                         }
 
                         // Create FormData for file upload
                         const formData = new FormData();
-                        formData.append('pdf', selectedFile);
+                        formData.append('file', selectedFile);
 
                         response = await fetch('/api/summarize', {
                             method: 'POST',
@@ -303,19 +443,27 @@
                     } else {
                         // Process text input
                         if (!text) {
-                            throw new Error('Please enter some text or upload a PDF to summarize.');
+                            throw new Error('Please enter some text or upload a file to summarize.');
                         }
 
                         if (text.length < 50) {
                             throw new Error('Please enter at least 50 characters for meaningful summarization.');
                         }
 
+                        // Get selected language and summary length
+                        const language = languageSelect.value;
+                        const summaryLength = lengthSelect.value;
+
                         response = await fetch('/api/summarize', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                             },
-                            body: JSON.stringify({ text: text })
+                            body: JSON.stringify({
+                                text: text,
+                                language: language,
+                                summaryLength: summaryLength
+                            })
                         });
                     }
 
@@ -325,15 +473,128 @@
                         throw new Error(data.error || 'Failed to generate summary');
                     }
 
-                    summaryDiv.textContent = data.summary;
+                    // Display the summary with basic highlighting
+                    summaryDiv.innerHTML = highlightKeywords(data.summary);
+
+                    // Add to history
+                    addToHistory(text || selectedFile.name, data.summary, languageSelect.value, lengthSelect.value);
                 } catch (error) {
                     console.error('Summarization error:', error);
                     showError(error.message || 'An error occurred while generating the summary.');
                 } finally {
+                    // Hide both loaders
                     loader.style.display = 'none';
+                    document.getElementById('fileLoader').style.display = 'none';
                     summarizeBtn.disabled = false;
                 }
             });
+
+            // History functions
+            function addToHistory(originalInput, summary, language, summaryLength) {
+                // Get existing history from localStorage or initialize, I dont want to implement a login system because that would introduce unnessary complexity
+                let history = JSON.parse(localStorage.getItem('summaryHistory')) || [];
+
+                // Create new history entry
+                const historyEntry = {
+                    id: Date.now(),
+                    originalInput: originalInput.substring(0, 100) + (originalInput.length > 100 ? '...' : ''), // Truncate for display
+                    summary: summary,
+                    language: language,
+                    summaryLength: summaryLength,
+                    timestamp: new Date().toLocaleString()
+                };
+
+                // Add new entry to the beginning of the array
+                history.unshift(historyEntry);
+
+                // Keep only the last 10 entries
+                if (history.length > 10) {
+                    history = history.slice(0, 10);
+                }
+
+                // Save back to localStorage
+                localStorage.setItem('summaryHistory', JSON.stringify(history));
+
+                // Refresh the history display
+                displayHistory();
+            }
+
+            function displayHistory() {
+                const historyList = document.getElementById('historyList');
+                const history = JSON.parse(localStorage.getItem('summaryHistory')) || [];
+
+                if (history.length === 0) {
+                    historyList.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">No history yet. Generate some summaries to see them here.</p>';
+                    return;
+                }
+
+                historyList.innerHTML = '';
+
+                history.forEach(entry => {
+                    const historyItem = document.createElement('div');
+                    historyItem.className = 'history-item';
+                    historyItem.style.cssText = `
+                        border: 1px solid #ddd;
+                        border-radius: 8px;
+                        padding: 12px;
+                        margin-bottom: 10px;
+                        background-color: #fafafa;
+                    `;
+
+                    historyItem.innerHTML = `
+                        <div style="font-weight: bold; margin-bottom: 5px; display: flex; justify-content: space-between;">
+                            <span>${entry.originalInput}</span>
+                            <span style="font-size: 0.8em; color: #666;">${entry.timestamp}</span>
+                        </div>
+                        <div style="font-size: 0.9em; color: #555; margin-bottom: 8px;">
+                            Language: ${entry.language}, Length: ${entry.summaryLength}
+                        </div>
+                        <div class="history-summary">${highlightKeywords(entry.summary)}</div>
+                        <button onclick="loadFromHistory(${entry.id})"
+                                style="margin-top: 8px; background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;">
+                            Load Summary
+                        </button>
+                    `;
+
+                    historyList.appendChild(historyItem);
+                });
+            }
+
+            window.loadFromHistory = function(id) {
+                const history = JSON.parse(localStorage.getItem('summaryHistory')) || [];
+                const entry = history.find(item => item.id === id);
+
+                if (entry) {
+                    document.getElementById('summary').innerHTML = highlightKeywords(entry.summary);
+                }
+            }
+
+            function clearHistory() {
+                localStorage.removeItem('summaryHistory');
+                displayHistory();
+            }
+
+            // Initialize history display when page loads
+            displayHistory();
+
+            // Add event listener to clear history button
+            document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
+
+            // Basic keyword highlighting function
+            function highlightKeywords(text) {
+                // Simple highlighting of common keywords/phrases
+                // This is a basic implementation - in a real app, you'd want more sophisticated NLP
+                const keywords = ['important', 'key', 'significant', 'major', 'critical', 'primary', 'main', 'essential', 'crucial', 'vital'];
+
+                let highlightedText = text;
+                keywords.forEach(keyword => {
+                    // Case-insensitive replacement with highlight class
+                    const regex = new RegExp(`(${keyword})`, 'gi');
+                    highlightedText = highlightedText.replace(regex, '<span class="highlight">$1</span>');
+                });
+
+                return highlightedText;
+            }
 
             function showError(message) {
                 errorMessage.textContent = message;
